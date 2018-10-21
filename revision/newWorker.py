@@ -1,6 +1,19 @@
+import glob
+import json
+import os
+import re
+import requests
+import sys
+import selenium.webdriver.support.ui as ui
+
 from re import match
-from splinter import Browser
-import glob, json, os, re, requests, sys
+from selenium import webdriver
+from selenium.common import exceptions
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from typing import List
+
 
 class Course:
     Open                 = False
@@ -78,27 +91,47 @@ class Teacher:
             "Courses": {
                 "{Subject}": {"Course Code": [{"{Section Codes}": {Course Object}}]}
             }
-        }        
+        }
     }
 """
 
-with open(glob.glob("*_config.json")[0]) as fi:
-    config = json.load(fi)
-executable_path = {'executable_path': config['browser']}
-b = Browser(config['type'], headless=config['headless'], incognito=True, **executable_path, fullscreen=True)
-teachers = {}
-totalData = {"Teachers": {}}
+# with open(glob.glob("*_config.json")[0]) as fi:
+#     config = json.load(fi)
+# executable_path = {'executable_path': config['browser']}
+# # b = Browser(config['type'], headless=config['headless'], incognito=True, **executable_path, fullscreen=True)
+# teachers = {}
+# totalData = {"Teachers": {}}
 
-def main():   
-    badInit = True
-    while badInit:
+"""Handles WebDriver operations, runs up to {attempts} number of times
+as exceptions occur, if number of attempts exceeds {attempts} then the last
+exception raise from {func} will be raised
+
+Raises:
+    return_err -- Last exception raised"""
+def handle_driver_operation(driver: webdriver, attempts: int, func, *args):
+    return_err: Exception = Exception("Error with driver operation")
+
+    # Attempt to run the function at most {attempt} times, will return
+    # after function excecutes and no exceptions occur
+    for attempt in range(attempts):
         try:
-            initToQuery()
-            badInit = False
-        except:
-            pass
-    subjects  = getSubjects()
-    semester = sys.argv[1]
+            func(*args, driver)
+            return
+        except Exception as err:
+            return_err = err
+
+    # Reraise from the last exception which was raised from {func}
+    raise return_err
+
+def scrape_information(username: str, passsord: str, driver: webdriver):
+    handle_driver_operation(driver, 10, initToQuery, username, passsord)
+
+    subjects  = get_values_from_select_options("LIST_VAR1_1", driver)
+    semesters = get_values_from_select_options("VAR1", driver)
+    semester = semesters[1]
+
+    print(subjects, semesters)
+    return
     subjectCourses = {}
     for subject in subjects:
         unsuccessfulRun = True
@@ -181,33 +214,58 @@ def main():
         json.dump(totalData, fi)
     b.quit()
 
-def initToQuery():
+"""Navigates to the search query, handles the case where already logged in"""
+def initToQuery(username: str, passsord: str, driver: webdriver):
+    wait5 = ui.WebDriverWait(driver, 5)
+    wait3 = ui.WebDriverWait(driver, 3)
+
     url = "https://portal.sdbor.edu"
-    b.visit(url)
-    b.find_by_id("username").first.fill(config["wa_username"])
-    b.find_by_id("password").first.fill(config["wa_password"] + "\n")
-    b.visit(url + "/dsu-student/Pages/default.aspx")
-    while b.is_element_not_present_by_text("WebAdvisor for Prospective Students"):
-        pass
-    b.find_by_text("WebAdvisor for Prospective Students").click()
-    while b.is_element_not_present_by_text("Admission Information", 1):
-        pass
-    b.find_by_text("Admission Information").first.click()
-    while b.is_element_not_present_by_text("Search for Class Sections", 1):
-        pass
-    b.find_by_text("Search for Class Sections").first.click()
-    while b.is_element_not_present_by_id("VAR1", 1):
+
+    # Navigate to login
+    driver.get(url)
+
+    try:
+        # Wait until login page has loaded and log in, exception is thrown if already logged in
+        wait3.until(lambda d: d.find_element_by_id("username") is not None)
+        driver.find_element_by_id("username").send_keys(username)
+        driver.find_element_by_id("password").send_keys(passsord + "\n")
+        # Wait until post-login page has loaded
+        wait5.until(lambda d: d.find_element_by_id("SearchBox") is not None)
+    # Exception will be thrown if already logged in
+    except exceptions.TimeoutException:
         pass
 
-def getSemesters(): #assumes that you're already on the Prospective students search page
-    select = b.find_by_id("VAR1")
-    options = select.first.find_by_tag("option")
-    return [x['value'] for x in options if x.text]
+    # Navigate to DSU landing page
+    driver.get(url + "/dsu-student/Pages/default.aspx")
 
-def getSubjects(): #assumes that you're already on the Prospective students search page
-    select = b.find_by_id("LIST_VAR1_1")
-    options = select.first.find_by_tag("option")
-    return [x['value'] for x in options if x.text]
+    # If this isn't the first time on this page (have already logged in and been here once)
+    # the dropdown will already be open and thus the "Admission Information" link can be
+    # clicked right away
+    try:
+        # Try waiting until "Admission Information" link is visible, then click it
+        element = wait3.until(expected_conditions.element_to_be_clickable((By.XPATH, """//a/span[text()="Admission Information"]""")))
+        element.click()
+    # Exception will be thrown if this is the first time landing on this page
+    except (exceptions.TimeoutException, exceptions.WebDriverException):
+        # Wait until DSU landing page has loaded and click on the "WebAdvisor for Prospective Students" link
+        wait3.until(lambda d: d.find_element_by_xpath("""//a/h5[text()="WebAdvisor for Prospective Students"]""") is not None)
+        driver.find_element_by_xpath("""//a/h5[text()="WebAdvisor for Prospective Students"]""").click()
+        element = wait3.until(expected_conditions.element_to_be_clickable((By.XPATH, """//a/span[text()="Admission Information"]""")))
+        element.click()
+
+    # Wait until "Search for Class Sections" link is visible, then click it
+    element = wait5.until(expected_conditions.element_to_be_clickable((By.XPATH, """//*[text()="Search for Class Sections"]""")))
+    element.click()
+
+    # Wait until search page has loaded
+    wait5.until(lambda d: d.find_element_by_id("VAR1") is not None)
+
+def get_values_from_select_options(ID: str, driver: webdriver) -> List[str]:
+    # Assumes that you're already on the search page
+    select_element = driver.find_element_by_id(ID)
+    option_tags = select_element.find_elements_by_tag_name("option")
+
+    return [option_tag.get_attribute("value") for option_tag in option_tags if option_tag.text != ""]
 
 def handleExtraExits():
     for e, x in enumerate(b.find_by_css('button[type="button"][class="btn btn-sm btn-danger"]')):
@@ -328,6 +386,26 @@ def getTimes(s):
 def selectDropdown(ddt, t): #assumes that you're already on the Prospective students search page
     selects = b.find_by_id(ddt).first
     selects.select(t)
+
+def get_config(path: str) -> dict:
+    with open(path) as creds_file:
+        return json.load(creds_file)
+
+def main():
+    creds: dict = get_config("./creds.json")
+    username: str = creds["username"]
+    password: str = creds["password"]
+    remote = False
+
+    if not remote:
+        with webdriver.Chrome("C:/RJFiles/Assets/chromedriver_win32/chromedriver.exe") as driver:
+            scrape_information(username, password, driver)
+    else:
+        with webdriver.Remote("http://127.0.0.1:4444/wd/hub", desired_capabilities=DesiredCapabilities.CHROME.copy()) as driver:
+            scrape_information(username, password, driver)
+            driver.quit()
+
+
 
 if __name__ == "__main__":
     main()

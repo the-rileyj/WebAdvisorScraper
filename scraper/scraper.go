@@ -12,6 +12,7 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/pkg/errors"
+	serrors "github.com/the-rileyj/WebAdvisorScraper/errors"
 	"github.com/the-rileyj/WebAdvisorScraper/functions"
 	"github.com/the-rileyj/WebAdvisorScraper/structs"
 )
@@ -27,9 +28,6 @@ import (
 // 		// 	return nil
 // 		// }),
 // 		chromedp.WaitVisible(`#username`, chromedp.ByID),
-// 		chromedp.SendKeys(`#username`, "rsjohnson67576", chromedp.ByID),
-// 		chromedp.SendKeys(`#password`, "Sdbor_p4ssw0rd", chromedp.ByID),
-// 		chromedp.Click(`#submitthis`, chromedp.ByID),
 // 		// chromedp.WaitVisible(`#submitthis`, chromedp.ByID),
 // 		chromedp.WaitVisible(`//div[@id="SearchBox"]`, chromedp.BySearch),
 // 		// chromedp.Text(`//title`, str),
@@ -56,7 +54,8 @@ func main() {
 	defer cancel()
 
 	// Create chrome instance
-	c, err := chromedp.New(ctxt, chromedp.WithLog(log.Printf))
+	c, err := chromedp.New(ctxt)
+	// c, err := chromedp.New(ctxt, chromedp.WithLog(log.Printf))
 	// c, err := chromedp.New(ctxt, chromedp.WithLog(log.Printf), chromedp.WithTargets(client.New().WatchPageTargets(ctxt)))
 	if err != nil {
 		log.Fatal(err)
@@ -90,22 +89,47 @@ func main() {
 		killChannel <- structs.RJSignal{}
 	}()
 
-	credentials, err := structs.GetCredentials("./info.json")
+	credentials, err := structs.GetCredentials("../info.json")
 
 	if err != nil {
 		fmt.Println(errors.Wrap(err, "could not get credentials"))
 		os.Exit(1)
 	}
 
-	// Run task list
-	operationCounter = 0
-	for err = c.Run(ctxt, functions.NavigateToSearch(credentials.Username, credentials.Password)); err != nil; {
-		if operationCounter == 10 {
-			log.Fatal(errors.Wrap(err, "scraper failed to reach initial search position"))
-		}
+	// c.Run(ctxt, chromedp.Tasks{
+	// 	chromedp.Navigate("https://portal.sdbor.edu"),
+	// 	chromedp.WaitVisible(`#username`, chromedp.ByID),
+	// 	chromedp.SendKeys(`#username`, credentials.Username, chromedp.ByID),
+	// 	chromedp.SendKeys(`#password`, credentials.Password, chromedp.ByID),
+	// 	chromedp.Click(`#submitthis`, chromedp.ByID),
+	// })
 
-		err = c.Run(ctxt, functions.NavigateToSearch(credentials.Username, credentials.Password))
-		operationCounter++
+	// chromedp.Location
+
+	// Run task list
+	// for err = c.Run(ctxt, chromedp.Tasks{
+	// 	chromedp.WaitVisible(`#SearchBox`, chromedp.ByID),
+	// 	chromedp.Navigate("https://portal.sdbor.edu/dsu-student/Pages/default.aspx"),
+	// 	chromedp.WaitVisible(`//*[text()="WebAdvisor for Prospective Students"]`, chromedp.BySearch),
+	// 	chromedp.Click(`//*[text()="WebAdvisor for Prospective Students"]`, chromedp.BySearch),
+	// 	chromedp.WaitVisible(`//*[text()="Admission Information"]`, chromedp.BySearch),
+	// 	chromedp.Click(`//*[text()="Admission Information"]`, chromedp.BySearch),
+	// 	chromedp.WaitVisible(`//*[text()="Search for Class Sections"]`, chromedp.BySearch),
+	// 	chromedp.Click(`//*[text()="Search for Class Sections"]`, chromedp.BySearch),
+	// 	chromedp.WaitVisible(`//div/a/span[text()="Search for Class Sections"]`, chromedp.BySearch),
+	// });
+	// for err = functions.NavigateToSearch(ctxt, c, credentials.Username, credentials.Password, true); err != nil; {
+	// 	if operationCounter == 10 {
+	// 		log.Fatal(errors.Wrap(err, "scraper failed to reach initial search position"))
+	// 	}
+
+	// 	operationCounter++
+	// }
+
+	err = c.Run(ctxt, functions.NavigateToSearch(credentials.Username, credentials.Password))
+
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "scraper failed to reach initial search position"))
 	}
 
 	// Get list of semesters
@@ -132,21 +156,29 @@ func main() {
 		operationCounter++
 	}
 
-	for _, semester := range semesterList {
-		for _, subject := range subjectList {
+	for semesterIndex, semester := range semesterList {
+		for subjectIndex, subject := range subjectList {
+			var subjectInformation []structs.CourseInfomation
 			operationCounter = 0
 
 			// Get information for the given subject
-			for subjectInformation, err = functions.GetSubjectInformation(ctxt, c); err != nil; {
+			for subjectInformation, err = functions.GetSubjectInformation(ctxt, c, semester, subject, semesterIndex+1, subjectIndex+1); err != nil; {
+				fmt.Println(err)
+
+				if _, ok := err.(*serrors.FullReinitializationError); ok {
+					functions.NavigateToSearch("", "")
+				}
+
 				if operationCounter == 10 {
 					fmt.Println(errors.Wrapf(err, "scraper failed to get information for subject %s in the %s semester", subject, semester))
 					break
 				}
 
-				subjectInformation, err = functions.GetSubjectInformation(ctxt, c)
+				subjectInformation, err = functions.GetSubjectInformation(ctxt, c, semester, subject, semesterIndex+1, subjectIndex+1)
 				operationCounter++
 			}
 
+			fmt.Println(subjectInformation)
 		}
 	}
 
