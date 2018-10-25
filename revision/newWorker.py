@@ -16,66 +16,67 @@ from typing import List
 
 
 class Course:
-    Open                 = False
+    Open = False
 
-    AcademicLevel        = ""
-    CourseCode           = ""
-    CourseDescription    = ""
-    CourseName           = ""
-    DateStart            = ""
-    DateEnd              = ""
-    Location             = ""
-    MeetingInformation   = ""
-    Supplies             = ""
-    
-    Credits              = 0
-    SlotsAvailable       = 0
-    SlotsCapacity        = 0
-    SlotsWaitlist        = 0
-    TimeEnd              = 0
-    TimeStart            = 0
+    AcademicLevel = ""
+    CourseCode = ""
+    CourseDescription = ""
+    CourseName = ""
+    DateStart = ""
+    DateEnd = ""
+    Location = ""
+    MeetingInformation = ""
+    Supplies = ""
 
-    ProfessorEmails      = []
-    PrereqNonCourse      = []
+    Credits = 0
+    SlotsAvailable = 0
+    SlotsCapacity = 0
+    SlotsWaitlist = 0
+    TimeEnd = 0
+    TimeStart = 0
+
+    ProfessorEmails = []
+    PrereqNonCourse = []
     RecConcurrentCourses = []
     ReqConcurrentCourses = []
 
-    PrereqCourses        = {}
+    PrereqCourses = {}
     InstructionalMethods = {}
 
     def __init__(self):
-        self.Open                 = False
+        self.Open = False
 
-        self.AcademicLevel        = ""
-        self.CourseCode           = ""
-        self.CourseDescription    = ""
-        self.CourseName           = ""
-        self.DateStart            = ""
-        self.DateEnd              = ""
-        self.Location             = ""
-        self.MeetingInformation   = ""
-        self.Supplies             = ""
-        
-        self.Credits              = 0
-        self.SlotsAvailable       = 0
-        self.SlotsCapacity        = 0
-        self.SlotsWaitlist        = 0
-        self.TimeEnd              = 0
-        self.TimeStart            = 0
+        self.AcademicLevel = ""
+        self.CourseCode = ""
+        self.CourseDescription = ""
+        self.CourseName = ""
+        self.DateStart = ""
+        self.DateEnd = ""
+        self.Location = ""
+        self.MeetingInformation = ""
+        self.Supplies = ""
 
-        self.ProfessorEmails      = []
-        self.PrereqNonCourse      = []
+        self.Credits = 0
+        self.SlotsAvailable = 0
+        self.SlotsCapacity = 0
+        self.SlotsWaitlist = 0
+        self.TimeEnd = 0
+        self.TimeStart = 0
+
+        self.ProfessorEmails = []
+        self.PrereqNonCourse = []
         self.RecConcurrentCourses = []
         self.ReqConcurrentCourses = []
 
-        self.PrereqCourses        = {}
+        self.PrereqCourses = {}
         self.InstructionalMethods = {}
 
 
 class Teacher:
     Email = ""
-    Name  = ""
+    Name = ""
     Phone = ""
+
     def __init__(self, e, n, p):
         self.Email = e
         self.Name = n
@@ -108,6 +109,8 @@ exception raise from {func} will be raised
 
 Raises:
     return_err -- Last exception raised"""
+
+
 def handle_driver_operation(driver: webdriver, attempts: int, func, *args):
     return_err: Exception = Exception("Error with driver operation")
 
@@ -123,17 +126,19 @@ def handle_driver_operation(driver: webdriver, attempts: int, func, *args):
     # Reraise from the last exception which was raised from {func}
     raise return_err
 
+
 def scrape_information(username: str, passsord: str, driver: webdriver):
     handle_driver_operation(driver, 10, initToQuery, username, passsord)
 
-    subjects  = get_values_from_select_options("LIST_VAR1_1", driver)
+    subjects = get_values_from_select_options("LIST_VAR1_1", driver)
     semesters = get_values_from_select_options("VAR1", driver)
     semester = semesters[1]
 
     print(subjects, semesters)
-    return
+
     subjectCourses = {}
     for subject in subjects:
+        handleExtraExits()
         unsuccessfulRun = True
         run = 0
         while unsuccessfulRun:
@@ -267,11 +272,13 @@ def get_values_from_select_options(ID: str, driver: webdriver) -> List[str]:
 
     return [option_tag.get_attribute("value") for option_tag in option_tags if option_tag.text != ""]
 
-def handleExtraExits():
-    for e, x in enumerate(b.find_by_css('button[type="button"][class="btn btn-sm btn-danger"]')):
-        if e:
-            x.click()
-    
+"""Deletes all extra windows, leaving only the main search window"""
+def handleExtraExits(driver: webdriver):
+    # The search window's exit button is at xpath "//button[type="button"][class="btn btn-sm btn-danger"][0]",
+    # so we delete all windows from the 2nd element until the end of the list, by clicking each of the buttons
+    for close button in driver.find_elements_by_xpath('//button[type="button"][class="btn btn-sm btn-danger"]')[1:]:
+        close_button.click()
+
 def objectToDict(obj):
     return {attr: getattr(obj, attr) for attr in type(obj).__dict__ if not attr.startswith("__")}
 
@@ -288,7 +295,7 @@ def scrapeTable(tab):
                 tab.find_by_tag("tr")[n].find_by_tag("td")[e].find_by_tag("a").first.click()
                 while b.is_element_not_present_by_text("Section Information", 1):
                     print("Waiting on Section Information")
-                #Start scraping for the bulk of the course data
+                # Start scraping for the bulk of the course data
                 course.CourseName = b.find_by_id("VAR1").first.text
                 course.CourseCodeSection = b.find_by_id("VAR2").first.text
                 nm = match(r"(.+-.+)-.+", course.CourseCodeSection)
